@@ -16,12 +16,17 @@ mod counter;
 mod scoring;
 mod game;
 mod ui;
+mod error;
 
 use clap::{Command, Arg};
 use game::Game;
+use crate::error::GameResult;
 
 /// The entry point for the game application.
-fn main() {
+///
+/// Parses command line arguments and starts the game.
+/// Returns an exit code appropriate to the result.
+fn main() -> GameResult<()> {
     // Set up command line argument parsing
     let matches = Command::new("Turn-based Game")
         .version("1.0")
@@ -58,8 +63,6 @@ fn main() {
             .help("Number of targets per turn")
             .default_value("5"))
         .get_matches();
-
-    
 
     // Parse command line arguments
     let player1_name = matches.get_one::<String>("name1").unwrap().to_string();
@@ -112,4 +115,6 @@ fn main() {
             break;
         }
     }
+    
+    Ok(())
 }

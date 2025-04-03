@@ -1,17 +1,23 @@
 //! Player module for managing player attributes and state.
+//!
+//! This module defines the Player struct and its associated methods for
+//! managing player characteristics during gameplay.
 
 /// Represents a player in the game with their characteristics.
 #[derive(Debug, Clone)]
 pub struct Player {
+    /// The player's name
     name: String,
+    /// The player's health points
     vitality: u32,
+    /// The player's movement speed (affects counter speed)
     speed: u32,
+    /// The player's power (affects scoring)
     strength: u32,
 }
 
 impl Player {
-    /// Creates a new player with the given name and vitality.
-    /// Speed and strength are initialized to default values of 50.
+    /// Creates a new player with the given name and attributes.
     ///
     /// # Arguments
     ///
@@ -33,21 +39,37 @@ impl Player {
     }
     
     /// Returns the player's name.
+    ///
+    /// # Returns
+    ///
+    /// Reference to the player's name
     pub fn name(&self) -> &str {
         &self.name
     }
     
     /// Returns the player's current vitality.
+    ///
+    /// # Returns
+    ///
+    /// The player's vitality value
     pub fn vitality(&self) -> u32 {
         self.vitality
     }
     
     /// Returns the player's current speed.
+    ///
+    /// # Returns
+    ///
+    /// The player's speed value
     pub fn speed(&self) -> u32 {
         self.speed
     }
     
     /// Returns the player's current strength.
+    ///
+    /// # Returns
+    ///
+    /// The player's strength value
     pub fn strength(&self) -> u32 {
         self.strength
     }
@@ -127,5 +149,16 @@ mod tests {
         // Test that strength doesn't go below 0
         player.decrease_strength(50);
         assert_eq!(player.strength(), 0);
+    }
+    
+    #[test]
+    fn test_player_clone() {
+        let player1 = Player::new("TestPlayer".to_string(), 100, 60, 70);
+        let player2 = player1.clone();
+        
+        assert_eq!(player1.name(), player2.name());
+        assert_eq!(player1.vitality(), player2.vitality());
+        assert_eq!(player1.speed(), player2.speed());
+        assert_eq!(player1.strength(), player2.strength());
     }
 }

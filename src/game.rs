@@ -1,17 +1,25 @@
 //! Game module for managing the game state and logic.
+//!
+//! This module contains the main game logic including turn handling,
+//! score calculation, and player management.
 
 use crate::player::Player;
 use crate::counter::Counter;
 use crate::scoring;
 use crate::ui;
+use crate::error::{GameError, GameResult};
 use rand::Rng;
 use std::io::{self, Write};
 
 /// Represents the game state.
 pub struct Game {
+    /// The two players
     players: [Player; 2],
+    /// Number of targets per turn
     target_count: usize,
+    /// Flag indicating if the game is over
     game_over: bool,
+    /// Index of the winner (if game is over)
     winner_idx: Option<usize>,
 }
 
@@ -48,30 +56,54 @@ impl Game {
     ///
     /// # Returns
     ///
-    /// true if the player wants to play again, false otherwise
+    /// Result containing true if the player wants to play again, false otherwise
     pub fn run(&mut self) -> bool {
-        ui::print_heading("Game Start", 1);
+        if let Err(e) = self.run_game_loop() {
+            eprintln!("Game error: {}", e);
+            return false;
+        }
+        
+        // Ask if player wants to play again
+        print!("Start a new game? [Y/N]\n>");
+        if let Err(e) = io::stdout().flush() {
+            eprintln!("Error flushing stdout: {}", e);
+            return false;
+        }
+        
+        let mut input = String::new();
+        match io::stdin().read_line(&mut input) {
+            Ok(_) => input.trim().eq_ignore_ascii_case("y"),
+            Err(e) => {
+                eprintln!("Error reading input: {}", e);
+                false
+            }
+        }
+    }
+    
+    /// The main game loop implementation.
+    fn run_game_loop(&mut self) -> GameResult<()> {
+        ui::print_heading("Game Start", 1)?;
         let mut round = 1;
         
         // While both players have vitality, continue the game
         while self.players[0].vitality() > 0 && self.players[1].vitality() > 0 && !self.game_over {
-            ui::print_heading(format!("Round {}", round).as_str(), 2);
+            ui::print_heading(format!("Round {}", round).as_str(), 2)?;
             
             // Player 1's turn
-            let p1_score = self.play_turn(0);
+            let p1_score = self.play_turn(0)?;
             
             // Player 2's turn
-            let p2_score = self.play_turn(1);
+            let p2_score = self.play_turn(1)?;
             
             // Determine the winner of the round
-            self.process_round_result(p1_score, p2_score);
+            self.process_round_result(p1_score, p2_score, None)?;
             
-            ui::print_heading(format!("END of Round {}", round).as_str(), 2);
+            ui::print_heading(format!("END of Round {}", round).as_str(), 2)?;
             round += 1;
         }
         
         // One player has lost all vitality or speed reached 0, game over
-        ui::print_heading("Game Over", 1);
+        ui::print_heading("Game Over", 1)?;
         
         // Determine winner based on either winner_idx (speed = 0 case) or vitality
         let winner = if let Some(idx) = self.winner_idx {
@@ -83,15 +115,7 @@ impl Game {
         };
         
         println!("Winner: {}", winner);
-        
-        // Ask if player wants to play again
-        print!("Start a new game? [Y/N]\n>");
-        io::stdout().flush().unwrap();
-        
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap_or_default();
-        
-        input.trim().eq_ignore_ascii_case("y")
+        Ok(())
     }
     
     /// Executes a turn for the specified player.
@@ -102,8 +126,8 @@ impl Game {
     ///
     /// # Returns
     ///
-    /// The player's average score for the turn
-    fn play_turn(&self, player_idx: usize) -> u32 {
+    /// Result containing the player's average score for the turn
+    fn play_turn(&self, player_idx: usize) -> GameResult<u32> {
         let player = &self.players[player_idx];
         println!("{}'s turn (Vitality={}, Speed={}, Strength={})", 
                  player.name(), player.vitality(), player.speed(), player.strength());
@@ -113,23 +137,23 @@ impl Game {
         println!("→ Objectives: {:?}", targets);
         println!("→ Press ENTER to start the turn..");
         
-        let _ = ui::wait_for_enter();
+        ui::wait_for_enter()?;
         let mut scores = Vec::new();
         
-        for (_i, &target) in targets.iter().enumerate() {
+        for &target in targets.iter() {
             let counter = Counter::new();
             let (value_arc, miss_arc, running_arc) = counter.get_display_values();
             // Capture the join handle from display_counter:
-            let ui_handle = ui::display_counter(value_arc, miss_arc, running_arc.clone(), target);
-            counter.start(player.speed());
-            let _ = ui::wait_for_enter();
+            let ui_handle = ui::display_counter(value_arc, miss_arc, running_arc.clone(), target)?;
+            counter.start(player.speed())?;
+            ui::wait_for_enter()?;
             let (value, miss) = counter.stop();
             // Wait for the UI thread to finish
-            ui_handle.join().unwrap();
+            ui_handle.join().map_err(|_| GameError::LogicError("UI thread panicked".to_string()))?;
             
             // Clear the current line before printing final result
             print!("\x1B[A\r\x1B[K"); // Move cursor up and clear line
-            io::stdout().flush().unwrap();
+            io::stdout().flush().map_err(GameError::from)?;
     
             // Small pause
             std::thread::sleep(std::time::Duration::from_millis(50));
@@ -148,7 +172,7 @@ impl Game {
         println!("# End of turn #");
         println!("→ Average score: {}", avg_score);
         
-        avg_score
+        Ok(avg_score)
     }
     
     
@@ -168,7 +192,12 @@ impl Game {
     ///
     /// * `p1_score` - The score of player 1
     /// * `p2_score` - The score of player 2
-    fn process_round_result(&mut self, p1_score: u32, p2_score: u32) {
+    /// * `test_choice` - Optional test choice for automated testing
+    ///
+    /// # Returns
+    ///
+    /// Result indicating whether processing succeeded
+    fn process_round_result(&mut self, p1_score: u32, p2_score: u32, test_choice: Option<usize>) -> GameResult<()> {
         if p1_score > p2_score {
             // Player 1 wins
             let diff = p1_score.saturating_sub(p2_score);
@@ -177,7 +206,7 @@ impl Game {
                      self.players[0].name(), self.players[1].name(), diff);
             
             if self.players[1].vitality() > 0 {
-                self.apply_penalty(0, 1);
+                self.apply_penalty(0, 1, test_choice)?;
             }
         } else if p2_score > p1_score {
             // Player 2 wins
@@ -187,12 +216,14 @@ impl Game {
                      self.players[1].name(), self.players[0].name(), diff);
             
             if self.players[0].vitality() > 0 {
-                self.apply_penalty(1, 0);
+                self.apply_penalty(1, 0, test_choice)?;
             }
         } else {
             // Draw
             println!("The round is a draw. No vitality lost.");
         }
+        
+        Ok(())
     }
     
     /// Applies a penalty chosen by the winner to the loser.
@@ -201,12 +232,17 @@ impl Game {
     ///
     /// * `winner_idx` - The index of the winning player
     /// * `loser_idx` - The index of the losing player
-    fn apply_penalty(&mut self, winner_idx: usize, loser_idx: usize) {
+    /// * `test_choice` - Optional test choice for automated testing
+    ///
+    /// # Returns
+    ///
+    /// Result indicating whether applying the penalty succeeded
+    fn apply_penalty(&mut self, winner_idx: usize, loser_idx: usize, test_choice: Option<usize>) -> GameResult<()> {
         println!("{}, you must choose which poison to apply to {}:", 
                  self.players[winner_idx].name(), self.players[loser_idx].name());
         
         let options = ["-5 speed", "-5 strength"];
-        let choice = ui::get_user_choice("Choose a penalty:", &options);
+        let choice = ui::get_user_choice("Choose a penalty:", &options, test_choice)?;
         
         match choice {
             0 => {
@@ -227,6 +263,8 @@ impl Game {
             },
             _ => unreachable!(), // get_user_choice ensures a valid index
         }
+        
+        Ok(())
     }
 }
 
@@ -250,7 +288,7 @@ mod tests {
         assert_eq!(game.players[0].vitality(), 100);
         assert_eq!(game.players[1].vitality(), 100);
         assert_eq!(game.players[0].speed(), 60);
-        assert_eq!(game.players[1].speed(), 70);
+        assert_eq!(game.players[0].strength(), 70);
     }
 
     #[test]
@@ -273,5 +311,63 @@ mod tests {
         for target in targets {
             assert!(target <= 100);
         }
+    }
+    
+    #[test]
+    fn test_process_round_result_player1_wins() {
+        let mut game = Game::new(
+            "Player1".to_string(), 
+            "Player2".to_string(),
+            100, 60, 70, 5
+        );
+        
+        // Use a test choice (0 = decrease speed)
+        let result = game.process_round_result(100, 50, Some(0));
+        
+        assert!(result.is_ok());
+        
+        // Verify that player2's vitality and speed were reduced
+        assert_eq!(game.players[1].vitality(), 50); // 100 - (100 - 50)
+        assert_eq!(game.players[1].speed(), 55);    // 60 - 5
+    }
+    
+    #[test]
+    fn test_process_round_result_player2_wins() {
+        let mut game = Game::new(
+            "Player1".to_string(), 
+            "Player2".to_string(),
+            100, 60, 70, 5
+        );
+        
+        // Use a test choice (1 = decrease strength)
+        let result = game.process_round_result(50, 100, Some(1));
+        
+        assert!(result.is_ok());
+        
+        // Verify that player1's vitality and strength were reduced
+        assert_eq!(game.players[0].vitality(), 50); // 100 - (100 - 50)
+        assert_eq!(game.players[0].strength(), 65); // 70 - 5
+    }
+    
+    #[test]
+    fn test_process_round_result_draw() {
+        let mut game = Game::new(
+            "Player1".to_string(), 
+            "Player2".to_string(),
+            100, 60, 70, 5
+        );
+        
+        // In a draw, no penalties are applied
+        let result = game.process_round_result(50, 50, None);
+        
+        assert!(result.is_ok());
+        
+        // Verify that no attributes were changed
+        assert_eq!(game.players[0].vitality(), 100);
+        assert_eq!(game.players[1].vitality(), 100);
+        assert_eq!(game.players[0].speed(), 60);
+        assert_eq!(game.players[1].speed(), 60);
+        assert_eq!(game.players[0].strength(), 70);
+        assert_eq!(game.players[1].strength(), 70);
     }
 }
