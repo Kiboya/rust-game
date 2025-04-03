@@ -27,6 +27,15 @@ use crate::error::GameResult;
 /// Parses command line arguments and starts the game.
 /// Returns an exit code appropriate to the result.
 fn main() -> GameResult<()> {
+    // Initialize logger with colors enabled
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Info)
+        .format_timestamp(None)
+        .format_module_path(false)
+        .format_target(false)
+        .write_style(env_logger::WriteStyle::Always) // Force color output
+        .init();
+
     // Set up command line argument parsing
     let matches = Command::new("Turn-based Game")
         .version("1.0")
@@ -72,7 +81,7 @@ fn main() -> GameResult<()> {
         .unwrap()
         .parse::<u32>()
         .unwrap_or_else(|_| {
-            eprintln!("Invalid vitality value, using default of 50");
+            log::error!("Invalid vitality value, using default of 50");
             50
         });
     
@@ -80,7 +89,7 @@ fn main() -> GameResult<()> {
         .unwrap()
         .parse::<u32>()
         .unwrap_or_else(|_| {
-            eprintln!("Invalid speed value, using default of 50");
+            log::error!("Invalid speed value, using default of 50");
             50
         });
     
@@ -88,7 +97,7 @@ fn main() -> GameResult<()> {
         .unwrap()
         .parse::<u32>()
         .unwrap_or_else(|_| {
-            eprintln!("Invalid strength value, using default of 50");
+            log::error!("Invalid strength value, using default of 50");
             50
         });
     
@@ -96,7 +105,7 @@ fn main() -> GameResult<()> {
         .unwrap()
         .parse::<usize>()
         .unwrap_or_else(|_| {
-            eprintln!("Invalid target count, using default of 5");
+            log::error!("Invalid target count, using default of 5");
             5
         });
     

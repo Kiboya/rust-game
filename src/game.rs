@@ -59,12 +59,13 @@ impl Game {
     /// Result containing true if the player wants to play again, false otherwise
     pub fn run(&mut self) -> bool {
         if let Err(e) = self.run_game_loop() {
-            eprintln!("Game error: {}", e);
+            log::error!("Game error: {}", e);
             return false;
         }
         
         // Ask if player wants to play again
-        print!("Start a new game? [Y/N]\n>");
+        log::info!("Start a new game? [Y/N]");
+        print!("> ");
         if let Err(e) = io::stdout().flush() {
             eprintln!("Error flushing stdout: {}", e);
             return false;
@@ -74,7 +75,7 @@ impl Game {
         match io::stdin().read_line(&mut input) {
             Ok(_) => input.trim().eq_ignore_ascii_case("y"),
             Err(e) => {
-                eprintln!("Error reading input: {}", e);
+                log::error!("Error reading input: {}", e);
                 false
             }
         }
@@ -82,12 +83,12 @@ impl Game {
     
     /// The main game loop implementation.
     fn run_game_loop(&mut self) -> GameResult<()> {
-        ui::print_heading("Game Start", 1)?;
+        log::info!("##### Game Started #####");        
         let mut round = 1;
         
         // While both players have vitality, continue the game
         while self.players[0].vitality() > 0 && self.players[1].vitality() > 0 && !self.game_over {
-            ui::print_heading(format!("Round {}", round).as_str(), 2)?;
+            log::info!("## Round {} ##", round);
             
             // Player 1's turn
             let p1_score = self.play_turn(0)?;
@@ -98,12 +99,12 @@ impl Game {
             // Determine the winner of the round
             self.process_round_result(p1_score, p2_score, None)?;
             
-            ui::print_heading(format!("END of Round {}", round).as_str(), 2)?;
+            log::info!("## End of round {} ##", round);
             round += 1;
         }
         
         // One player has lost all vitality or speed reached 0, game over
-        ui::print_heading("Game Over", 1)?;
+        log::info!("##### Game Over #####");
         
         // Determine winner based on either winner_idx (speed = 0 case) or vitality
         let winner = if let Some(idx) = self.winner_idx {
@@ -114,7 +115,7 @@ impl Game {
             self.players[1].name()
         };
         
-        println!("Winner: {}", winner);
+        log::info!("Winner: {} \n", winner);
         Ok(())
     }
     
@@ -129,16 +130,20 @@ impl Game {
     /// Result containing the player's average score for the turn
     fn play_turn(&self, player_idx: usize) -> GameResult<u32> {
         let player = &self.players[player_idx];
-        println!("{}'s turn (Vitality={}, Speed={}, Strength={})", 
-                 player.name(), player.vitality(), player.speed(), player.strength());
+        log::info!("{}'s turn (Vitality={}, Speed={}, Strength={})", 
+                   player.name(), player.vitality(), player.speed(), player.strength());
         
         // Generate random targets
         let targets = self.generate_targets();
-        println!("→ Objectives: {:?}", targets);
-        println!("→ Press ENTER to start the turn..");
+        log::info!("→ Objectives: {:?}", targets);
+        log::info!("→ Press ENTER to start the turn..");
         
         ui::wait_for_enter()?;
         let mut scores = Vec::new();
+
+        // Show the prompt on its own line and move to a new line
+        log::info!("Press ENTER to stop the counter.");
+        io::stdout().flush().map_err(GameError::from)?;
         
         for &target in targets.iter() {
             let counter = Counter::new();
@@ -163,14 +168,14 @@ impl Game {
             let base_score = score * (miss + 1) - player.strength();
             
             // Print the complete, final line
-            println!("→ Objective {}: Miss = {} | Counter = {} // Score = ({} + {}) / {} = {}",
-                target, miss, value, base_score, player.strength(), miss + 1, score);
+            log::info!("→ Objective {}: Miss = {} | Counter = {} // Score = ({} + {}) / {} = {}",
+                       target, miss, value, base_score, player.strength(), miss + 1, score);
         }
         
         let avg_score = scoring::calculate_average_score(&scores);
-        
-        println!("# End of turn #");
-        println!("→ Average score: {}", avg_score);
+
+        log::info!("# End of turn #");
+        log::info!("→ Average score: {} \n", avg_score);
         
         Ok(avg_score)
     }
@@ -202,8 +207,8 @@ impl Game {
             // Player 1 wins
             let diff = p1_score.saturating_sub(p2_score);
             self.players[1].decrease_vitality(diff);
-            println!("{} wins the round. {} loses {} vitality points.", 
-                     self.players[0].name(), self.players[1].name(), diff);
+            log::info!("{} wins the round. {} loses {} vitality points.", 
+                       self.players[0].name(), self.players[1].name(), diff);
             
             if self.players[1].vitality() > 0 {
                 self.apply_penalty(0, 1, test_choice)?;
@@ -212,15 +217,15 @@ impl Game {
             // Player 2 wins
             let diff = p2_score.saturating_sub(p1_score);
             self.players[0].decrease_vitality(diff);
-            println!("{} wins the round. {} loses {} vitality points.", 
-                     self.players[1].name(), self.players[0].name(), diff);
+            log::info!("{} wins the round. {} loses {} vitality points.", 
+                       self.players[1].name(), self.players[0].name(), diff);
             
             if self.players[0].vitality() > 0 {
                 self.apply_penalty(1, 0, test_choice)?;
             }
         } else {
             // Draw
-            println!("The round is a draw. No vitality lost.");
+            log::info!("It's a draw! No penalties applied.");
         }
         
         Ok(())
@@ -238,8 +243,8 @@ impl Game {
     ///
     /// Result indicating whether applying the penalty succeeded
     fn apply_penalty(&mut self, winner_idx: usize, loser_idx: usize, test_choice: Option<usize>) -> GameResult<()> {
-        println!("{}, you must choose which poison to apply to {}:", 
-                 self.players[winner_idx].name(), self.players[loser_idx].name());
+        log::info!("{}, you must choose which poison to apply to {}:", 
+                   self.players[winner_idx].name(), self.players[loser_idx].name());
         
         let options = ["-5 speed", "-5 strength"];
         let choice = ui::get_user_choice("Choose a penalty:", &options, test_choice)?;
@@ -247,19 +252,19 @@ impl Game {
         match choice {
             0 => {
                 self.players[loser_idx].decrease_speed(5);
-                println!("{}'s speed reduced by 5!", self.players[loser_idx].name());
+                log::info!("{}'s speed reduced by 5!", self.players[loser_idx].name());
                 
                 // Check if speed reached 0
                 if self.players[loser_idx].speed() == 0 {
-                    println!("Game Over! {} has lost because their speed reached 0!", 
-                             self.players[loser_idx].name());
+                    log::info!("Game Over! {} has lost because their speed reached 0!", 
+                               self.players[loser_idx].name());
                     self.game_over = true;
                     self.winner_idx = Some(winner_idx);
                 }
             },
             1 => {
                 self.players[loser_idx].decrease_strength(5);
-                println!("{}'s strength reduced by 5!", self.players[loser_idx].name());
+                log::info!("{}'s strength reduced by 5!", self.players[loser_idx].name());
             },
             _ => unreachable!(), // get_user_choice ensures a valid index
         }

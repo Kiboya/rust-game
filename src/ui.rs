@@ -30,9 +30,6 @@ pub fn display_counter(
     running: Arc<Mutex<bool>>,
     target: u32
 ) -> GameResult<thread::JoinHandle<()>> {
-    // Show the prompt on its own line
-    print!("Press ENTER to stop the counter...");
-    io::stdout().flush().map_err(GameError::from)?;
 
     let handle = thread::spawn(move || {
         while *running.lock().unwrap() {
@@ -79,10 +76,10 @@ pub fn get_user_choice(prompt: &str, options: &[&str], test_input: Option<usize>
         }
     }
     
-    println!("{}", prompt);
+    log::info!("{}", prompt);
     
     for (i, option) in options.iter().enumerate() {
-        println!("→ {}: {}", i + 1, option);
+        log::info!("→ {}: {}", i + 1, option);
     }
     
     print!(">");
@@ -94,51 +91,20 @@ pub fn get_user_choice(prompt: &str, options: &[&str], test_input: Option<usize>
     match input.trim().parse::<usize>() {
         Ok(n) if n > 0 && n <= options.len() => Ok(n - 1),
         Ok(_) => {
-            println!("Invalid choice. Selecting the first option by default.");
+            log::info!("Invalid choice. Selecting the first option by default.");
             Ok(0)
         },
         Err(_) => {
-            println!("Could not parse input. Selecting the first option by default.");
+            log::info!("Could not parse input. Selecting the first option by default.");
             Ok(0)
         }
     }
-}
-
-/// Prints a formatted heading to the terminal.
-///
-/// # Arguments
-///
-/// * `text` - The heading text
-/// * `level` - The heading level (1-3)
-///
-/// # Returns
-///
-/// Result indicating whether the print operation succeeded
-pub fn print_heading(text: &str, level: u8) -> GameResult<()> {
-    match level {
-        1 => println!("##### {} #####", text),
-        2 => println!("## {} ##", text),
-        3 => println!("# {} #", text),
-        _ => println!("{}", text),
-    }
-    
-    io::stdout().flush().map_err(GameError::from)?;
-    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
-    
-    #[test]
-    fn test_print_heading() {
-        // This is mostly for coverage, as it just prints to stdout
-        assert!(print_heading("Test Heading 1", 1).is_ok());
-        assert!(print_heading("Test Heading 2", 2).is_ok());
-        assert!(print_heading("Test Heading 3", 3).is_ok());
-        assert!(print_heading("Test Heading 4", 4).is_ok());
-    }
     
     #[test]
     fn test_display_counter() {
